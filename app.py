@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import yfinance as yf
 import matplotlib.pyplot as plt
 import time
@@ -16,7 +15,7 @@ st.title("📊 Simulateur P/E avec données réelles (yfinance)")
 ticker = st.text_input("Entrer un ticker (ex: NOW, MSFT, NVDA)", value="NOW")
 
 # ======================
-# DATA FETCH (ROBUSTE)
+# DATA FETCH (CACHE OK)
 # ======================
 
 @st.cache_data(ttl=3600)
@@ -25,17 +24,14 @@ def get_data(ticker):
         try:
             stock = yf.Ticker(ticker)
 
-            # ✅ Prix (rapide et fiable)
             price = stock.fast_info.get("lastPrice", None)
 
-            # ⚠️ EPS (peut bug)
             eps = None
             try:
                 eps = stock.info.get("trailingEps", None)
             except:
                 eps = None
 
-            # 🔁 Fallback EPS via financials
             if eps is None:
                 try:
                     earnings = stock.financials
@@ -47,15 +43,14 @@ def get_data(ticker):
                 except:
                     eps = None
 
-            # ✅ Calcul P/E
             pe = None
             if price and eps and eps != 0:
                 pe = price / eps
 
             return price, eps, pe
 
-        except Exception:
-            time.sleep(2)
+        except:
+            time.sleep(1)
 
     return None, None, None
 
@@ -95,34 +90,40 @@ st.subheader("⚙️ Hypothèses de simulation")
 col1, col2 = st.columns(2)
 
 with col1:
-    growth_price = st.slider("Croissance du prix (%)", 0, 30, 10) / 100
+    growth_price = st.slider("Croissance du prix (%)", 0, 100, 10) / 100
     years = st.slider("Nombre d'années", 1, 10, 5)
 
 with col2:
-    growth_eps = st.slider("Croissance EPS (%)", 0, 50, 25) / 100
+    growth_eps = st.slider("Croissance EPS (%)", 0, 100, 25) / 100
 
 # ======================
-# SIMULATION
+# SIMULATION (SANS CACHE)
 # ======================
 
-prices = [price]
-eps_list = [eps]
-pe_list = [price / eps]
+def run_simulation(price, eps, growth_price, growth_eps, years):
+    prices = [price]
+    eps_list = [eps]
+    pe_list = [price / eps]
 
-for i in range(1, years + 1):
-    new_price = prices[-1] * (1 + growth_price)
-    new_eps = eps_list[-1] * (1 + growth_eps)
+    for i in range(1, years + 1):
+        new_price = prices[-1] * (1 + growth_price)
+        new_eps = eps_list[-1] * (1 + growth_eps)
 
-    prices.append(new_price)
-    eps_list.append(new_eps)
-    pe_list.append(new_price / new_eps)
+        prices.append(new_price)
+        eps_list.append(new_eps)
+        pe_list.append(new_price / new_eps)
 
-df = pd.DataFrame({
-    "Année": list(range(years + 1)),
-    "Prix": prices,
-    "EPS": eps_list,
-    "P/E": pe_list
-})
+    df = pd.DataFrame({
+        "Année": list(range(years + 1)),
+        "Prix": prices,
+        "EPS": eps_list,
+        "P/E": pe_list
+    })
+
+    return df
+
+
+df = run_simulation(price, eps, growth_price, growth_eps, years)
 
 # ======================
 # TABLEAU
@@ -170,7 +171,7 @@ else:
 # CONCLUSION AUTO
 # ======================
 
-final_pe = pe_list[-1]
+final_pe = df["P/E"].iloc[-1]
 
 st.subheader("🎯 Lecture finale")
 
